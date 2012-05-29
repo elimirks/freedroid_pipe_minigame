@@ -17,6 +17,7 @@ CORE_OBJS = $(patsubst src/%.cpp,obj/%.o,$(CORE_SRCS))
 $(PROJECT): buildrepo $(CLIENT_OBJS) $(SERVER_OBJS) $(CORE_OBJS)
 	$(CC) $(OPTS) $(CLIENT_OBJS) $(CORE_OBJS) $(LIBS) -o $@
 
+# FIXME This doesn't do what it should be doing
 obj/%.o: src/%.c
 	$(CC) $(OPTS) -c $< -o $@
 

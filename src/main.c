@@ -4,8 +4,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "ponies.h"
-
 // Distance between each node
 #define DISTANCE 2
 
