@@ -6,7 +6,7 @@ OPTS = -g -std=gnu99
 PROJECT = freedroid-minigame
 
 # Libraries
-LIBS = -I/usr/include/SDL -lSDL
+LIBS = -I/usr/include/SDL -lSDL -lSDL_image -lSDL_gfx
 
 # GameCore Files and folders
 CORE_SRCS = $(shell find src -name '*.c')
