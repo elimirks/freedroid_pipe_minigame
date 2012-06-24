@@ -77,6 +77,7 @@ void free_map();
 struct Tile* get_tile(coor x, coor y);
 void generate_map(int points);
 
+int set_tile_turn(struct Tile* current, struct Tile* lasttile, struct Tile* twolasttile);
 int get_next_tile(struct Tile* start, struct Tile* end, struct Tile* current);
 int get_tile_direction(struct Tile* comparer, struct Tile* comparee);
 // What is firstMapPtr? It is a pointer to the first element in the array. TODO explain more 
@@ -317,38 +318,79 @@ void generate_map(int points) {
 	current.type = PIPE_STRAIGHT;
 	struct Tile randompoint;
 
+	// Just to check which direction the next point should be
+	struct Tile lasttile = *start;
+	struct Tile twolasttile;
+	twolasttile.type = BLANK;
+
 	// Generate a random amount of points for the pipes to go to
 	for (short i = (rand() % 3); i > 0; i--) {
 		randompoint.x = rand() % (MAP_WIDTH - 1);
 		randompoint.y = rand() % (MAP_HEIGHT - 1);
 		
+		// FIXME the same code is happening below! Put this stuff in a function to avoid duplication
+
 		while (get_next_tile(start, &randompoint, &current)) {
 			get_tile(current.x, current.y)->type = PIPE_STRAIGHT;
 			get_tile(current.x, current.y)->x = current.x;
 			get_tile(current.x, current.y)->y = current.y;
-			get_tile(current.x, current.y)->direction = UP;
+			get_tile(current.x, current.y)->direction = get_tile_direction(get_tile(current.x, current.y), &lasttile);
+
+			if (set_tile_turn(&current, &lasttile, &twolasttile)) {
+				get_tile(lasttile.x, lasttile.y)->type = PIPE_TURN;
+			}
+
+			twolasttile = lasttile;
+
+			lasttile.x = current.x;
+			lasttile.y = current.y;
+			lasttile.type = get_tile(current.x, current.y)->type;
 		}
 	}
-	// Just to check which direction the next point should be
-	struct Tile lasttile = *start;
-	struct Tile currenttile;
-	while (get_next_tile(start, end, &current)) {
-		// Make sure that the pipe doesn't overlap the end point!
-		if (current.x == end->x && current.y == end->y) break;
 
-		currenttile.x = current.x;
-		currenttile.y = current.y;
+	// We keep a history of 2 tiles back to check which direction and angle the previous tile should be (lasttile)
+
+	while (get_next_tile(start, end, &current)) {
+		// Stop generating tiles when we have reached the end tile
+		if (current.x == end->x && current.y == end->y) break;
 
 		// FIXME this just needs to compare the current tile from the last tile to get the proper direction
 		//  ++++ TODO make this do something other than PIPE_STRAIGHT
+
+		// TODO it would be great if there was a way to step through the generation process one by one.
+
 		get_tile(current.x, current.y)->type = PIPE_STRAIGHT;
 		get_tile(current.x, current.y)->x = current.x;
 		get_tile(current.x, current.y)->y = current.y;
-		get_tile(current.x, current.y)->direction = UP;
+		get_tile(current.x, current.y)->direction = get_tile_direction(get_tile(current.x, current.y), &lasttile);
+	
+		if (set_tile_turn(&current, &lasttile, &twolasttile)) {
+			get_tile(lasttile.x, lasttile.y)->type = PIPE_TURN;
+		}
+
+		twolasttile = lasttile;
 
 		lasttile.x = current.x;
 		lasttile.y = current.y;
 		lasttile.type = get_tile(current.x, current.y)->type;
+	}
+}
+
+int set_tile_turn(struct Tile* current, struct Tile* lasttile, struct Tile* twolasttile) {
+	// If the x and y both don't equal the twolatstile, it made a turn
+	if (twolasttile->type != BLANK && twolasttile->x != current->x && twolasttile->y != current->y) {
+		if ((lasttile->x < current->x && twolasttile->y > lasttile->y) || (lasttile->x < twolasttile->x && current->y > lasttile->y)) {
+			get_tile(lasttile->x, lasttile->y)->direction = RIGHT;
+		} else if ((lasttile->x < current->x && twolasttile->y < lasttile->y) || (lasttile->x < twolasttile->x && current->y < lasttile->y)) {
+			get_tile(lasttile->x, lasttile->y)->direction = UP;
+		} else if ((lasttile->x > current->x && twolasttile->y < lasttile->y) || (lasttile->x > twolasttile->x && current->y < lasttile->y)) {
+			get_tile(lasttile->x, lasttile->y)->direction = LEFT;
+		} else if ((lasttile->x > current->x && twolasttile->y > lasttile->y) || (lasttile->x > twolasttile->x && current->y > lasttile->y)) {
+			get_tile(lasttile->x, lasttile->y)->direction = DOWN;
+		}
+		return 1;
+	} else {
+		return 0;
 	}
 }
 
@@ -363,8 +405,7 @@ int get_tile_direction(struct Tile* comparer, struct Tile* comparee) {
 	} else if (comparer->y < comparee->y) {
 		return DOWN;
 	} else {
-		// FIXME there should probably be a 'stationary' thing as well
-		return UP;
+		printf("%s\n", "ERROR: comparer is the comparee");
 	}
 }
 
@@ -378,8 +419,32 @@ void draw_tile(struct Tile* tile) {
 			SDL_BlitSurface(tileEnd, NULL, screen, &tmprect);
 		break;
 		case PIPE_STRAIGHT:
-			SDL_BlitSurface(tileVertical, NULL, screen, &tmprect);
+			switch (tile->direction) {
+				case RIGHT:
+				case LEFT:
+					SDL_BlitSurface(tileHorizontal, NULL, screen, &tmprect);
+				break;
+				case UP:
+				case DOWN:
+					SDL_BlitSurface(tileVertical, NULL, screen, &tmprect);
+				break;
+			}
 		break;
+		case PIPE_TURN:
+			switch (tile->direction) {
+				case RIGHT:
+					SDL_BlitSurface(tileTurnDownRight, NULL, screen, &tmprect);
+				break;
+				case UP:
+					SDL_BlitSurface(tileTurnUpRight, NULL, screen, &tmprect);
+				break;
+				case LEFT:
+					SDL_BlitSurface(tileTurnUpLeft, NULL, screen, &tmprect);
+				break;
+				case DOWN:
+					SDL_BlitSurface(tileTurnDownLeft, NULL, screen, &tmprect);
+				break;
+			}
 		default:
 			SDL_BlitSurface(tileBlank, NULL, screen, &tmprect);
 		break;
