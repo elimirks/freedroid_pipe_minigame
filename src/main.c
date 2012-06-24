@@ -29,6 +29,9 @@ While generating, there will be arrays containing all of the end points, all of 
 
 */
 
+// Comment this out for release
+#define __DEBUG__
+
 #include "SDL.h"
 #include "SDL_image.h"
 #include "SDL_rotozoom.h"
@@ -40,6 +43,9 @@ While generating, there will be arrays containing all of the end points, all of 
 #define DISTANCE 2
 #define MAP_WIDTH 30
 #define MAP_HEIGHT 30
+
+// coordinate. (x and y position) data type
+#define coor uint8_t
 
 enum TILE_TYPES {
 	BLANK,
@@ -59,20 +65,29 @@ enum DIRECTIONS {
 };
 
 struct Tile {
-	unsigned short x;
-	unsigned short y;
+	coor x;
+	coor y;
 	short type;
 	short direction;
 };
 
-int get_next_point(struct Tile start, struct Tile end, struct Tile *current);
+struct Tile* map;
+void init_map();
+void free_map();
+struct Tile* get_tile(coor x, coor y);
+void generate_map(int points);
+
+int get_next_tile(struct Tile* start, struct Tile* end, struct Tile* current);
+int get_tile_direction(struct Tile* comparer, struct Tile* comparee);
 // What is firstMapPtr? It is a pointer to the first element in the array. TODO explain more 
-void generate_map(int points, unsigned short* firstMapPtr);
-void draw_tile(int x, int y, int type);
+void draw_tile(struct Tile* tile);
 
 void load_images();
 void free_images();
+
+#ifdef __DEBUG__
 void image_draw_test();
+#endif
 
 SDL_Surface* screen = NULL;
 SDL_Surface* tileVertical = NULL;
@@ -94,16 +109,14 @@ SDL_Surface* tileBlank = NULL;
 SDL_Event event;
 
 int main(int argc, char* args[]) {
-
 	srand(time(NULL));
+	init_map();
+	generate_map(1);
 
 	SDL_Init(SDL_INIT_EVERYTHING);
 	screen = SDL_SetVideoMode(20*MAP_WIDTH, 20*MAP_HEIGHT, 32, SDL_SWSURFACE);
 
 	load_images();
-
-	unsigned short map[MAP_WIDTH][MAP_HEIGHT] = {BLANK};
-	generate_map(1, &map[0][0]);
 
 	short quit = 0;
 
@@ -117,13 +130,14 @@ int main(int argc, char* args[]) {
 		}
 		for (int i = 0; i < MAP_WIDTH; i++) {
 			for (int j = 0; j < MAP_HEIGHT; j++) {
-				draw_tile(i, j, map[i][j]);
+				draw_tile(get_tile(i, j));
 			}
 		}
 		// Update Screen
 		SDL_Flip(screen);
 	}
 	free_images();
+	free_map();
 	SDL_Quit();
 
 	return 0;
@@ -174,6 +188,9 @@ void free_images() {
 	SDL_FreeSurface(tileTurnUpLeft);
 	SDL_FreeSurface(tileTurnUpRight);
 }
+
+#ifdef __DEBUG__
+
 // This is just a little function to test if all of the sprites are loading properly. It will be removed soon.
 void image_draw_test() {
 	{
@@ -229,20 +246,23 @@ void image_draw_test() {
 		SDL_BlitSurface(tileTurnUpRight, NULL, screen, &tmprect);
 	}
 }
+
+#endif
+
 // Gets where the next point should be to complete a path
-int get_next_point(struct Tile start, struct Tile end, struct Tile *current) {
+int get_next_tile(struct Tile* start, struct Tile* end, struct Tile *current) {
 
 	/*
 	TODO
 	
-	This needs to check the array of points to make sure that it stays away from anything important
+	This needs to check the map to make sure that it stays away from anything important
 	It would also be good to generate a random number of places to go in a specific direction so that the paths are not so predictable.
 	 + Right now, the paths are either a straight line or diagonal. Why not spice it up a bit?
 
 	*/
 
-	short xDistance = (current->x > end.x) ? current->x - end.x : end.x - current->x;
-	short yDistance = (current->y > end.y) ? current->y - end.y : end.y - current->y;
+	short xDistance = (current->x > end->x) ? current->x - end->x : end->x - current->x;
+	short yDistance = (current->y > end->y) ? current->y - end->y : end->y - current->y;
 	
 	// If the point is at the destination
 	if (xDistance == 0 && yDistance == 0) {
@@ -250,13 +270,13 @@ int get_next_point(struct Tile start, struct Tile end, struct Tile *current) {
 	}
 
 	if (xDistance > yDistance) {
-		if (current->x > end.x) {
+		if (current->x > end->x) {
 			current->x--;
 		} else {
 			current->x++;
 		}
 	} else {
-		if (current->y > end.y) {
+		if (current->y > end->y) {
 			current->y--;
 		} else {
 			current->y++;
@@ -266,70 +286,91 @@ int get_next_point(struct Tile start, struct Tile end, struct Tile *current) {
 }
 
 // We use firstMapPtr to access the actual array (the map array in the main loop)
-void generate_map(int points, unsigned short* firstMapPtr) {
-
-	// FIXME why create a new array when there is already an array? just use the existing array like so *(firstMapPtr + x * y)
-	unsigned short map[MAP_HEIGHT][MAP_WIDTH] = {BLANK};
-
+void generate_map(int points) {
 	unsigned short randX, randY;
 	randX = rand() % (MAP_WIDTH - 1);
 	randY = rand() % (MAP_HEIGHT - 1);
-	map[randX][randY] = START;
+
+	struct Tile* start = get_tile(randX, randY);
+
+	start->type = START;
+	start->x = randX;
+	start->y = randY;
+	start->direction = UP;
 	
-	// FIXME a better way to separate everything would be to use an array of structs with x and y coordinates
-	int startX = randX, startY = randY;
-	
-	// Make sure that the point is at least 2 places away from the starting point
-	while (!(randY < startY - DISTANCE || randX < startX - DISTANCE || randY > startY + DISTANCE || randX > startX + DISTANCE)) {
+	// Make sure that the point is at least DISTANCE places away from the starting point
+	while (!(randY < start->y - DISTANCE || randX < start->x - DISTANCE || randY > start->y + DISTANCE || randX > start->x + DISTANCE)) {
 		randX = rand() % (MAP_WIDTH - 1);
 		randY = rand() % (MAP_HEIGHT - 1);
 	}
 
-	map[randX][randY] = END;
+	struct Tile* end = get_tile(randX, randY);
 
-	struct Tile start = {
-		startX,
-		startY,
-		START,
-	};
-	struct Tile end = {
-		randX,
-		randY,
-		END,
-	};
+	end->type = END;
+	end->x = randX;
+	end->y = randY;
+	end->direction = UP;
+
+	// This is not a real THANG
 	struct Tile current;
-	current      = start;
+	current      = *start;
 	current.type = PIPE_STRAIGHT;
 	struct Tile randompoint;
 
 	// Generate a random amount of points for the pipes to go to
-	// FIXME this should do rand() % 3, I just put it at 1 for testing
-	for (short i = (rand() % 1); i > 0; i--) {
+	for (short i = (rand() % 3); i > 0; i--) {
 		randompoint.x = rand() % (MAP_WIDTH - 1);
 		randompoint.y = rand() % (MAP_HEIGHT - 1);
 		
-		while (get_next_point(start, randompoint, &current)) {
-			map[current.x][current.y] = PIPE_STRAIGHT;
+		while (get_next_tile(start, &randompoint, &current)) {
+			get_tile(current.x, current.y)->type = PIPE_STRAIGHT;
+			get_tile(current.x, current.y)->x = current.x;
+			get_tile(current.x, current.y)->y = current.y;
+			get_tile(current.x, current.y)->direction = UP;
 		}
 	}
-	while (get_next_point(start, end, &current)) {
+	// Just to check which direction the next point should be
+	struct Tile lasttile = *start;
+	struct Tile currenttile;
+	while (get_next_tile(start, end, &current)) {
 		// Make sure that the pipe doesn't overlap the end point!
-		if (current.x == end.x && current.y == end.y) break;
-		map[current.x][current.y] = PIPE_STRAIGHT;
-	}
-	// Write to the actual array
-	for (unsigned short i = 0; i < 30; i++) {
-		for (unsigned short j = 0; j < 30; j++) {
-			// Keep adding onto the memory address to sift through the whole array
-			*firstMapPtr++ = map[i][j];
-		}
+		if (current.x == end->x && current.y == end->y) break;
+
+		currenttile.x = current.x;
+		currenttile.y = current.y;
+
+		// FIXME this just needs to compare the current tile from the last tile to get the proper direction
+		//  ++++ TODO make this do something other than PIPE_STRAIGHT
+		get_tile(current.x, current.y)->type = PIPE_STRAIGHT;
+		get_tile(current.x, current.y)->x = current.x;
+		get_tile(current.x, current.y)->y = current.y;
+		get_tile(current.x, current.y)->direction = UP;
+
+		lasttile.x = current.x;
+		lasttile.y = current.y;
+		lasttile.type = get_tile(current.x, current.y)->type;
 	}
 }
 
-// Right now this just draws the blocks as different colours, but it will eventually have to draw them as images
-void draw_tile(int x, int y, int type) {
-	SDL_Rect tmprect = {x*20, y*20, 20, 20};
-	switch (type) {
+// This function is meant to only get the direction of an adjecent tile
+int get_tile_direction(struct Tile* comparer, struct Tile* comparee) {
+	if (comparer->x > comparee->x) {
+		return LEFT;
+	} else if (comparer->x < comparee->x) {
+		return RIGHT;
+	} else if (comparer->y > comparee->y) {
+		return UP;
+	} else if (comparer->y < comparee->y) {
+		return DOWN;
+	} else {
+		// FIXME there should probably be a 'stationary' thing as well
+		return UP;
+	}
+}
+
+void draw_tile(struct Tile* tile) {
+	SDL_Rect tmprect = {tile->x*20, tile->y*20, 20, 20};
+	switch (tile->type) {
 		case START:
 			SDL_BlitSurface(tileStart, NULL, screen, &tmprect);
 		break;
@@ -343,5 +384,18 @@ void draw_tile(int x, int y, int type) {
 			SDL_BlitSurface(tileBlank, NULL, screen, &tmprect);
 		break;
 	}
+}
+
+void init_map() {
+	map = malloc((MAP_WIDTH * MAP_HEIGHT) * sizeof(struct Tile));
+}
+
+void free_map() {
+	free(map);
+}
+
+struct Tile* get_tile(coor x, coor y) {
+	// Pointer magic :D
+	return map + ((y * MAP_WIDTH) + x);
 }
 
