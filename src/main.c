@@ -2,6 +2,7 @@
 
 TODO work on the random map generator
 
+
 How will the generator ... well... generate? How will the game even work?
 
 The user will have to connect wires to all of the points.
@@ -26,6 +27,19 @@ Algorithm
 5. Randomize the angles of everything
 
 While generating, there will be arrays containing all of the end points, all of the pipes, etc. BUT the actual map will just be one array clumping them all together
+
+
+New algo!
+Use a CSP.
+
+Generate the ENTIRE map completely randomly, with random tiles everywhere. After placing them all, run the CSP over and start changing tiles.
+
+Algo:
+1. Generate the starting point at random.
+2. Generate several end points.
+3. Place random pipes all over the map.
+4. Run a CSP over the map to make sure that all of the pipes could connect end and starting points. If not, swap the pipes for other pipes.
+5. At the very end, randomize the orientation of all of the pipes.
 
 */
 
@@ -75,6 +89,7 @@ struct Tile* map;
 void init_map();
 void free_map();
 struct Tile* get_tile(coor x, coor y);
+void generate_random_end_point(struct Tile* start);
 void generate_map(int points);
 
 int set_tile_turn(struct Tile* current, struct Tile* lasttile, struct Tile* twolasttile);
@@ -112,7 +127,7 @@ SDL_Event event;
 int main(int argc, char* args[]) {
 	srand(time(NULL));
 	init_map();
-	generate_map(1);
+	generate_map(5);
 
 	SDL_Init(SDL_INIT_EVERYTHING);
 	screen = SDL_SetVideoMode(20*MAP_WIDTH, 20*MAP_HEIGHT, 32, SDL_SWSURFACE);
@@ -286,7 +301,45 @@ int get_next_tile(struct Tile* start, struct Tile* end, struct Tile *current) {
 	return 1;
 }
 
+void generate_random_end_point(struct Tile* start) {
+	coor randX = rand() % (MAP_WIDTH - 1);
+	coor randY = rand() % (MAP_HEIGHT - 1);
+	struct Tile* endTile;
+	
+	do {
+		while (!(randY < start->y - DISTANCE || randX < start->x - DISTANCE || randY > start->y + DISTANCE || randX > start->x + DISTANCE)) {
+			randX = rand() % (MAP_WIDTH - 1);
+			randY = rand() % (MAP_HEIGHT - 1);
+		}
+		endTile = get_tile(randX, randY);
+	// Make sure the selected tile does not have another tile type set already.
+	} while (endTile->type != BLANK);
+	
+	endTile->type = END;
+	endTile->x = randX;
+	endTile->y = randY;
+	endTile->direction = UP;
+}
+
+void generate_map(int points) {
+	unsigned short randX, randY;
+	randX = rand() % (MAP_WIDTH - 1);
+	randY = rand() % (MAP_HEIGHT - 1);
+
+	struct Tile* start = get_tile(randX, randY);
+
+	start->type = START;
+	start->x = randX;
+	start->y = randY;
+	start->direction = UP;
+	
+	while (points-- > 0) {
+		generate_random_end_point(start);
+	}
+}
+
 // We use firstMapPtr to access the actual array (the map array in the main loop)
+/*
 void generate_map(int points) {
 	unsigned short randX, randY;
 	randX = rand() % (MAP_WIDTH - 1);
@@ -375,6 +428,7 @@ void generate_map(int points) {
 		lasttile.type = get_tile(current.x, current.y)->type;
 	}
 }
+*/
 
 int set_tile_turn(struct Tile* current, struct Tile* lasttile, struct Tile* twolasttile) {
 	// If the x and y both don't equal the twolatstile, it made a turn
