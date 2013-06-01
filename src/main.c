@@ -72,10 +72,10 @@ enum TILE_TYPES {
 };
 
 enum DIRECTIONS {
-	UP,
-	DOWN,
-	LEFT,
-	RIGHT,
+	UP = 0,
+	DOWN = 1,
+	LEFT = 2,
+	RIGHT = 3,
 };
 
 struct Tile {
@@ -144,10 +144,8 @@ int main(int argc, char* args[]) {
 				quit = 1;
 			}
 		}
-		for (int i = 0; i < MAP_WIDTH; i++) {
-			for (int j = 0; j < MAP_HEIGHT; j++) {
-				draw_tile(get_tile(i, j));
-			}
+		for (int i = 0; i < MAP_WIDTH * MAP_HEIGHT; i++) {
+			draw_tile(get_tile(i % MAP_WIDTH, i / MAP_WIDTH));
 		}
 		// Update Screen
 		SDL_Flip(screen);
@@ -284,7 +282,7 @@ int get_next_tile(struct Tile* start, struct Tile* end, struct Tile *current) {
 	if (xDistance == 0 && yDistance == 0) {
 		return 0;
 	}
-
+	
 	if (xDistance > yDistance) {
 		if (current->x > end->x) {
 			current->x--;
@@ -316,8 +314,6 @@ void generate_random_end_point(struct Tile* start) {
 	} while (endTile->type != BLANK);
 	
 	endTile->type = END;
-	endTile->x = randX;
-	endTile->y = randY;
 	endTile->direction = UP;
 }
 
@@ -329,12 +325,33 @@ void generate_map(int points) {
 	struct Tile* start = get_tile(randX, randY);
 
 	start->type = START;
-	start->x = randX;
-	start->y = randY;
 	start->direction = UP;
 	
+	// Generate all of the end points.
 	while (points-- > 0) {
 		generate_random_end_point(start);
+	}
+	
+	// Generate random pipes all over the uncovered spaces.
+	
+	coor currentX, currentY;
+	struct Tile* currentTilePointer;
+	
+	int randomTypeChoices[] = {
+		PIPE_STRAIGHT,
+		PIPE_TURN,
+		//PIPE_INTERSECT,
+		//PIPE_CROSS
+	};
+	
+	for (int i = 0; i < MAP_WIDTH * MAP_HEIGHT; i++) {
+		currentX = i % MAP_WIDTH, currentY = i / MAP_WIDTH;
+		currentTilePointer = get_tile(currentX, currentY);
+		
+		if (currentTilePointer->type == BLANK) {
+			currentTilePointer->type = randomTypeChoices[rand() % 2];
+			currentTilePointer->direction = rand() % 4;
+		}
 	}
 }
 
@@ -507,6 +524,16 @@ void draw_tile(struct Tile* tile) {
 
 void init_map() {
 	map = malloc((MAP_WIDTH * MAP_HEIGHT) * sizeof(struct Tile));
+	
+	struct Tile* currentTile;
+	// Set all of the default values.
+	for (int i = 0; i < MAP_WIDTH * MAP_HEIGHT; i++) {
+		currentTile = get_tile(i % MAP_WIDTH, i / MAP_WIDTH);
+		currentTile->x = i % MAP_WIDTH;
+		currentTile->y = i / MAP_WIDTH;
+		currentTile->type = BLANK;
+		currentTile->direction = UP;
+	}
 }
 
 void free_map() {
