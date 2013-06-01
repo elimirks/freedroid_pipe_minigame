@@ -105,20 +105,10 @@ void free_images();
 void image_draw_test();
 #endif
 
-SDL_Surface* screen = NULL;
-SDL_Surface* tileVertical = NULL;
-SDL_Surface* tileHorizontal = NULL;
-SDL_Surface* tileStart = NULL;
-SDL_Surface* tileEnd = NULL;
-SDL_Surface* tileCross = NULL;
-SDL_Surface* tileIntersectUp = NULL;
-SDL_Surface* tileIntersectDown = NULL;
-SDL_Surface* tileIntersectLeft = NULL;
-SDL_Surface* tileIntersectRight = NULL;
-SDL_Surface* tileTurnDownRight = NULL;
-SDL_Surface* tileTurnDownLeft = NULL;
-SDL_Surface* tileTurnUpLeft = NULL;
-SDL_Surface* tileTurnUpRight = NULL;
+SDL_Surface* screen;
+SDL_Surface* tileVertical, *tileHorizontal, *tileStart, *tileEnd, *tileCross;
+SDL_Surface* tileIntersectUp, *tileIntersectDown, *tileIntersectLeft, *tileIntersectRight;
+SDL_Surface* tileTurnDownRight, *tileTurnDownLeft, *tileTurnUpLeft, *tileTurnUpRight;
 // This will not be needed for the final game, but is just here to occupy the blank tiles in the mean time
 SDL_Surface* tileBlank = NULL;
 
@@ -337,19 +327,22 @@ void generate_map(int points) {
 	coor currentX, currentY;
 	struct Tile* currentTilePointer;
 	
-	int randomTypeChoices[] = {
-		PIPE_STRAIGHT,
-		PIPE_TURN,
-		//PIPE_INTERSECT,
-		//PIPE_CROSS
-	};
-	
 	for (int i = 0; i < MAP_WIDTH * MAP_HEIGHT; i++) {
 		currentX = i % MAP_WIDTH, currentY = i / MAP_WIDTH;
 		currentTilePointer = get_tile(currentX, currentY);
 		
 		if (currentTilePointer->type == BLANK) {
-			currentTilePointer->type = randomTypeChoices[rand() % 2];
+			int tileChoice = rand() % 9;
+			// Generate straight and turned pipes more often.
+			if (tileChoice >= 0 && tileChoice <= 2) {
+				currentTilePointer->type = PIPE_STRAIGHT;
+			} else if (tileChoice >= 3 && tileChoice <= 5) {
+				currentTilePointer->type = PIPE_TURN;
+			} else if (tileChoice == 6 || tileChoice == 7) {
+				currentTilePointer->type = PIPE_INTERSECT;
+			} else if (tileChoice == 8) {
+				currentTilePointer->type = PIPE_CROSS;
+			}
 			currentTilePointer->direction = rand() % 4;
 		}
 	}
@@ -516,6 +509,26 @@ void draw_tile(struct Tile* tile) {
 					SDL_BlitSurface(tileTurnDownLeft, NULL, screen, &tmprect);
 				break;
 			}
+		break;
+		case PIPE_CROSS:
+			SDL_BlitSurface(tileCross, NULL, screen, &tmprect);
+		break;
+		case PIPE_INTERSECT:
+			switch (tile->direction) {
+				case RIGHT:
+					SDL_BlitSurface(tileIntersectRight, NULL, screen, &tmprect);
+				break;
+				case UP:
+					SDL_BlitSurface(tileIntersectUp, NULL, screen, &tmprect);
+				break;
+				case LEFT:
+					SDL_BlitSurface(tileIntersectLeft, NULL, screen, &tmprect);
+				break;
+				case DOWN:
+					SDL_BlitSurface(tileIntersectDown, NULL, screen, &tmprect);
+				break;
+			}
+		break;
 		default:
 			SDL_BlitSurface(tileBlank, NULL, screen, &tmprect);
 		break;
