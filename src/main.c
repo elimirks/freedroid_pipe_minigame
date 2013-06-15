@@ -38,8 +38,9 @@ Algo:
 1. Generate the starting point at random.
 2. Generate several end points.
 3. Place random pipes all over the map.
-4. Run a CSP over the map to make sure that all of the pipes could connect end and starting points. If not, swap the pipes for other pipes.
-5. At the very end, randomize the orientation of all of the pipes.
+4. Try to draw paths to each end point.
+ - If it is impossible to connect to an end point, change some tiles to allow it.
+5. Randomize the orientation of all of the pipes.
 
 */
 
@@ -50,53 +51,24 @@ Algo:
 #include "SDL_image.h"
 #include "SDL_rotozoom.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
+
+#include "Tiles.h"
 
 // Distance between each node
 #define DISTANCE 2
-#define MAP_WIDTH 30
-#define MAP_HEIGHT 30
 
-// coordinate. (x and y position) data type
-#define coor uint8_t
-
-enum TILE_TYPES {
-	BLANK,
-	START,
-	PIPE_STRAIGHT,
-	PIPE_TURN,
-	PIPE_INTERSECT,
-	PIPE_CROSS,
-	END,
-};
-
-enum DIRECTIONS {
-	UP = 0,
-	DOWN = 1,
-	LEFT = 2,
-	RIGHT = 3,
-};
-
-struct Tile {
-	coor x;
-	coor y;
-	short type;
-	short direction;
-};
-
-struct Tile* map;
-void init_map();
-void free_map();
-struct Tile* get_tile(coor x, coor y);
-void generate_random_end_point(struct Tile* start);
+struct Map map;
+void generate_random_end_point(struct Tile *start);
 void generate_map(int points);
 
-int set_tile_turn(struct Tile* current, struct Tile* lasttile, struct Tile* twolasttile);
-int get_next_tile(struct Tile* start, struct Tile* end, struct Tile* current);
-int get_tile_direction(struct Tile* comparer, struct Tile* comparee);
+int manhattan_tile_distance(struct Tile *tileA, struct Tile *tileB);
+
+int set_tile_turn(struct Tile *current, struct Tile *lasttile, struct Tile *twolasttile);
+int get_next_tile(struct Tile *start, struct Tile *end, struct Tile *current);
+int get_tile_direction(struct Tile *comparer, struct Tile *comparee);
 // What is firstMapPtr? It is a pointer to the first element in the array. TODO explain more 
-void draw_tile(struct Tile* tile);
+void draw_tile(struct Tile *tile);
 
 void load_images();
 void free_images();
@@ -116,11 +88,11 @@ SDL_Event event;
 
 int main(int argc, char* args[]) {
 	srand(time(NULL));
-	init_map();
-	generate_map(5);
+	init_map(&map, 30, 30);
+	generate_map(1);
 
 	SDL_Init(SDL_INIT_EVERYTHING);
-	screen = SDL_SetVideoMode(20*MAP_WIDTH, 20*MAP_HEIGHT, 32, SDL_SWSURFACE);
+	screen = SDL_SetVideoMode(20 * map.width, 20 * map.height, 32, SDL_SWSURFACE);
 
 	load_images();
 
@@ -134,14 +106,14 @@ int main(int argc, char* args[]) {
 				quit = 1;
 			}
 		}
-		for (int i = 0; i < MAP_WIDTH * MAP_HEIGHT; i++) {
-			draw_tile(get_tile(i % MAP_WIDTH, i / MAP_WIDTH));
+		for (int i = 0; i < map.width * map.height; i++) {
+			draw_tile(get_tile(&map, i % map.width, i / map.width));
 		}
 		// Update Screen
 		SDL_Flip(screen);
 	}
 	free_images();
-	free_map();
+	free_map(&map);
 	SDL_Quit();
 
 	return 0;
@@ -290,16 +262,16 @@ int get_next_tile(struct Tile* start, struct Tile* end, struct Tile *current) {
 }
 
 void generate_random_end_point(struct Tile* start) {
-	coor randX = rand() % (MAP_WIDTH - 1);
-	coor randY = rand() % (MAP_HEIGHT - 1);
+	coor randX = rand() % (map.width - 1);
+	coor randY = rand() % (map.height - 1);
 	struct Tile* endTile;
 	
 	do {
 		while (!(randY < start->y - DISTANCE || randX < start->x - DISTANCE || randY > start->y + DISTANCE || randX > start->x + DISTANCE)) {
-			randX = rand() % (MAP_WIDTH - 1);
-			randY = rand() % (MAP_HEIGHT - 1);
+			randX = rand() % (map.width - 1);
+			randY = rand() % (map.height - 1);
 		}
-		endTile = get_tile(randX, randY);
+		endTile = get_tile(&map, randX, randY);
 	// Make sure the selected tile does not have another tile type set already.
 	} while (endTile->type != BLANK);
 	
@@ -309,10 +281,10 @@ void generate_random_end_point(struct Tile* start) {
 
 void generate_map(int points) {
 	unsigned short randX, randY;
-	randX = rand() % (MAP_WIDTH - 1);
-	randY = rand() % (MAP_HEIGHT - 1);
+	randX = rand() % (map.width - 1);
+	randY = rand() % (map.height - 1);
 
-	struct Tile* start = get_tile(randX, randY);
+	struct Tile* start = get_tile(&map, randX, randY);
 
 	start->type = START;
 	start->direction = UP;
@@ -327,9 +299,9 @@ void generate_map(int points) {
 	coor currentX, currentY;
 	struct Tile* currentTilePointer;
 	
-	for (int i = 0; i < MAP_WIDTH * MAP_HEIGHT; i++) {
-		currentX = i % MAP_WIDTH, currentY = i / MAP_WIDTH;
-		currentTilePointer = get_tile(currentX, currentY);
+	for (int i = 0; i < map.width * map.height; i++) {
+		currentX = i % map.width, currentY = i / map.width;
+		currentTilePointer = get_tile(&map, currentX, currentY);
 		
 		if (currentTilePointer->type == BLANK) {
 			int tileChoice = rand() % 9;
@@ -345,15 +317,50 @@ void generate_map(int points) {
 			}
 			currentTilePointer->direction = rand() % 4;
 		}
+		
+		printf("Distance between %d,%d and %d,%d: %d\n",
+				start->x, start->y, currentTilePointer->x, currentTilePointer->y,
+				manhattan_tile_distance(start, currentTilePointer));
 	}
+	
+	// We use a list of visited indexes to avoid trying to go over the same tile twice.
+	// Not so easy, boy!
+	// You will need to create a dynamically allocated list of objects... Build dem structs!
+	
+	//int visited_flags[map.width * map.height] = {0};
+	
+	// TODO builds teh fs function!!! And then DFS!!! Good old times... :)
+	
+	// TODO Try to find a path to each end point.
+	// We should be keeping track of each end point.
+	
+	// Use A* search to find the end point.
+	// Woo AI algorithms!
+}
+
+// TODO organize these functions! There should be a pathfinding file with all of these structs and functions.
+
+struct TilePathEntity {
+	coor x, y;
+	struct TilePathEntity *previous, *next;
+};
+
+struct TilePath {
+	struct Tile *startTile;
+	struct Tile *endTile;
+};
+
+// Returns a boolean value, depending on if the tile paths match
+int compare_tile_path(struct TilePath* pathA, struct TilePath* pathB) {
+	// Note: You should check the LAST index first. That will be much faster than checking from the start state.
 }
 
 // We use firstMapPtr to access the actual array (the map array in the main loop)
 /*
 void generate_map(int points) {
 	unsigned short randX, randY;
-	randX = rand() % (MAP_WIDTH - 1);
-	randY = rand() % (MAP_HEIGHT - 1);
+	randX = rand() % (map.width - 1);
+	randY = rand() % (map.height - 1);
 
 	struct Tile* start = get_tile(randX, randY);
 
@@ -364,8 +371,8 @@ void generate_map(int points) {
 	
 	// Make sure that the point is at least DISTANCE places away from the starting point
 	while (!(randY < start->y - DISTANCE || randX < start->x - DISTANCE || randY > start->y + DISTANCE || randX > start->x + DISTANCE)) {
-		randX = rand() % (MAP_WIDTH - 1);
-		randY = rand() % (MAP_HEIGHT - 1);
+		randX = rand() % (map.width - 1);
+		randY = rand() % (map.height - 1);
 	}
 
 	struct Tile* end = get_tile(randX, randY);
@@ -388,8 +395,8 @@ void generate_map(int points) {
 
 	// Generate a random amount of points for the pipes to go to
 	for (short i = (rand() % 3); i > 0; i--) {
-		randompoint.x = rand() % (MAP_WIDTH - 1);
-		randompoint.y = rand() % (MAP_HEIGHT - 1);
+		randompoint.x = rand() % (map.width - 1);
+		randompoint.y = rand() % (map.height - 1);
 		
 		// FIXME the same code is happening below! Put this stuff in a function to avoid duplication
 
@@ -440,17 +447,23 @@ void generate_map(int points) {
 }
 */
 
+int manhattan_tile_distance(struct Tile* tileA, struct Tile* tileB) {
+	int xDistance = tileA->x > tileB->x ? tileA->x - tileB->x : tileB->x - tileA->x;
+	int yDistance = tileA->y > tileB->y ? tileA->y - tileB->y : tileB->y - tileA->y;
+	return xDistance + yDistance;
+}
+
 int set_tile_turn(struct Tile* current, struct Tile* lasttile, struct Tile* twolasttile) {
 	// If the x and y both don't equal the twolatstile, it made a turn
 	if (twolasttile->type != BLANK && twolasttile->x != current->x && twolasttile->y != current->y) {
 		if ((lasttile->x < current->x && twolasttile->y > lasttile->y) || (lasttile->x < twolasttile->x && current->y > lasttile->y)) {
-			get_tile(lasttile->x, lasttile->y)->direction = RIGHT;
+			get_tile(&map, lasttile->x, lasttile->y)->direction = RIGHT;
 		} else if ((lasttile->x < current->x && twolasttile->y < lasttile->y) || (lasttile->x < twolasttile->x && current->y < lasttile->y)) {
-			get_tile(lasttile->x, lasttile->y)->direction = UP;
+			get_tile(&map, lasttile->x, lasttile->y)->direction = UP;
 		} else if ((lasttile->x > current->x && twolasttile->y < lasttile->y) || (lasttile->x > twolasttile->x && current->y < lasttile->y)) {
-			get_tile(lasttile->x, lasttile->y)->direction = LEFT;
+			get_tile(&map, lasttile->x, lasttile->y)->direction = LEFT;
 		} else if ((lasttile->x > current->x && twolasttile->y > lasttile->y) || (lasttile->x > twolasttile->x && current->y > lasttile->y)) {
-			get_tile(lasttile->x, lasttile->y)->direction = DOWN;
+			get_tile(&map, lasttile->x, lasttile->y)->direction = DOWN;
 		}
 		return 1;
 	} else {
@@ -533,28 +546,5 @@ void draw_tile(struct Tile* tile) {
 			SDL_BlitSurface(tileBlank, NULL, screen, &tmprect);
 		break;
 	}
-}
-
-void init_map() {
-	map = malloc((MAP_WIDTH * MAP_HEIGHT) * sizeof(struct Tile));
-	
-	struct Tile* currentTile;
-	// Set all of the default values.
-	for (int i = 0; i < MAP_WIDTH * MAP_HEIGHT; i++) {
-		currentTile = get_tile(i % MAP_WIDTH, i / MAP_WIDTH);
-		currentTile->x = i % MAP_WIDTH;
-		currentTile->y = i / MAP_WIDTH;
-		currentTile->type = BLANK;
-		currentTile->direction = UP;
-	}
-}
-
-void free_map() {
-	free(map);
-}
-
-struct Tile* get_tile(coor x, coor y) {
-	// Pointer magic :D
-	return map + ((y * MAP_WIDTH) + x);
 }
 
